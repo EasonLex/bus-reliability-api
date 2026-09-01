@@ -29,10 +29,9 @@ pip install -r requirements-dev.txt
 export MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 \
        MYSQL_USER=root MYSQL_PASSWORD=... MYSQL_DATABASE=bus
 
-MYSQL_PWD="$MYSQL_PASSWORD" mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" \
-  --default-character-set=utf8mb4 "$MYSQL_DATABASE" < sql/test_fixture_schema.sql
-python seed_test.py            # 假資料
-python -m pytest -q            # 13 passed
+python apply_sql.py sql/test_fixture_schema.sql   # 建表
+python seed_test.py                               # 假資料
+python -m pytest -q                               # 13 passed
 
 uvicorn main:app --reload --port 8000
 open http://127.0.0.1:8000/

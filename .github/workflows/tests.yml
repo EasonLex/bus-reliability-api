@@ -44,12 +44,11 @@ jobs:
       - run: pip install -r requirements-dev.txt
 
       - name: 建表
-        # 用 MYSQL_PWD 而不是 -p。-p 會在 process list 裡露出密碼，
-        # 而且 mysql -p < file 的密碼提示會把檔案第一行吃掉。
-        run: |
-          MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -P 3306 \
-            -u root --default-character-set=utf8mb4 bus \
-            < sql/test_fixture_schema.sql
+        # 用 pymysql 而不是 mysql CLI。
+        # runner 上有沒有 mysql client 是 runner 映像檔的事，
+        # 不在這個 workflow 的宣告裡——哪天換一版把它拿掉，
+        # 這裡會壞在一個看起來跟本專案無關的訊息上。
+        run: python apply_sql.py sql/test_fixture_schema.sql
 
       - name: 灌假資料
         run: python seed_test.py
