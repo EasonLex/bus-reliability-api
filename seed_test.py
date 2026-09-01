@@ -4,6 +4,9 @@
   1. 站序跳號        seq 跳過 14  → 用 b.seq = a.seq + 1 接的話會少一段
   2. 缺基準          seq 8→9 那對站牌沒有基準列 → INNER JOIN 會默默跳過
   3. 樣本不足        seq 10→11 的 n < 100，p90_reliable = 0
+  4. 路線號碼撞名    287 / 287區間車 / 2871 三條都含「287」
+                     → 排序沒做的話，使用者打 287 會在三個長得很像的
+                       選項裡隨便挑一個，而他多半直接選第一個
 
 灌哪個資料庫由環境變數決定（跟 API 用同一組 MYSQL_*），
 不要在這裡寫死主機或 socket 路徑——寫死的話 CI 上就得再改一次。
@@ -31,17 +34,25 @@ stops = []
 for i, s in enumerate(seqs):
     stops.append((s, f"S{1000+s}", NAMES[i % len(NAMES)]))
 
-cur.executemany(
-    "INSERT INTO route_stop (city, sub_route_uid, direction, seq, station_id,"
-    " stop_name, boarding, version_id, loaded_at) VALUES"
-    " ('Taipei','TPE11881',0,%s,%s,%s,NULL,'2026-08-30',NOW())", stops)
+INS_STOP = ("INSERT INTO route_stop (city, route_name, sub_route_uid, direction,"
+            " seq, station_id, stop_name, boarding, version_id, loaded_at)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,NULL,'2026-08-30',NOW())")
 
-# 另一條短路線，測搜尋與方向
-cur.executemany(
-    "INSERT INTO route_stop (city, sub_route_uid, direction, seq, station_id,"
-    " stop_name, boarding, version_id, loaded_at) VALUES"
-    " ('NewTaipei','NWT10001',1,%s,%s,%s,NULL,'2026-08-30',NOW())",
-    [(i + 1, f"N{2000+i}", NAMES[i]) for i in range(4)])
+# 主要那條：287，站序有跳號，基準資料都掛在它身上
+cur.executemany(INS_STOP, [("Taipei", "287", "TPE11881", 0, s, sid, nm)
+                           for s, sid, nm in stops])
+
+# 名稱容易混淆的鄰居。它們沒有基準資料，只用來測搜尋排序。
+# 「2871」不是真的路線，是刻意造出來咬住「純子字串比對」的：
+# 打 287 的人絕對不想看到它排在 287 前面。
+for city, name, uid, dirn, n_stop, base in [
+    ("Taipei",    "287區間車", "TPE11882", 0, 5, 3000),
+    ("Taipei",    "2871",      "TPE11883", 0, 4, 4000),
+    ("NewTaipei", "藍22",      "NWT10001", 1, 4, 2000),
+]:
+    cur.executemany(INS_STOP, [
+        (city, name, uid, dirn, i + 1, f"X{base+i}", NAMES[i])
+        for i in range(n_stop)])
 
 rows = []
 for (fs, fid, _), (ts, tid, _) in zip(stops, stops[1:]):
@@ -65,5 +76,10 @@ cur.executemany(
     " p90_reliable, mean_sec, sd_sec, date_from, date_to, n_days, rule_version,"
     " baseline_version, computed_at) VALUES (" + ",".join(["%s"] * 22) + ")", rows)
 
-print(f"route_stop {len(stops) + 4} 列 / baseline_segment {len(rows)} 列")
-print("站序：", [s for s, _, _ in stops])
+# db._connect() 用的是 DictCursor，取值要用欄位名——所以這裡一定要 AS
+cur.execute("SELECT COUNT(*) AS n, COUNT(DISTINCT sub_route_uid) AS n_route"
+            " FROM route_stop")
+c = cur.fetchone()
+print(f"route_stop {c['n']} 列 / {c['n_route']} 條子路線"
+      f" · baseline_segment {len(rows)} 列")
+print("287 的站序：", [s for s, _, _ in stops], "（缺 14）")

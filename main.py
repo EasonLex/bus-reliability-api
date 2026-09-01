@@ -122,18 +122,31 @@ _routes_cache = {"at": 0.0, "data": None}
 # 一條 90 站的路線大約 1,300 bytes ——會被「靜靜地截斷」，
 # 於是最長的那幾條路線的終點站名會是錯的，而且完全不會報錯。
 SQL_ROUTES = """
-SELECT city, sub_route_uid, direction,
+SELECT city, route_name, sub_route_uid, direction,
        COUNT(*)                                        AS n_stops,
        MIN(CASE WHEN rn_asc  = 1 THEN stop_name END)   AS first_stop,
        MIN(CASE WHEN rn_desc = 1 THEN stop_name END)   AS last_stop
 FROM (
-  SELECT city, sub_route_uid, direction, stop_name,
+  SELECT city, route_name, sub_route_uid, direction, stop_name,
          ROW_NUMBER() OVER (PARTITION BY sub_route_uid, direction ORDER BY seq)      AS rn_asc,
          ROW_NUMBER() OVER (PARTITION BY sub_route_uid, direction ORDER BY seq DESC) AS rn_desc
   FROM route_stop
 ) t
-GROUP BY city, sub_route_uid, direction
-ORDER BY sub_route_uid, direction
+GROUP BY city, route_name, sub_route_uid, direction
+ORDER BY
+  -- 「287」要排在「30」後面而不是「3」和「4」中間——字典序會給出
+  -- 1, 12, 2, 287, 3 這種順序，使用者捲到一半就放棄了。
+  --
+  -- 第一鍵：數字開頭的排前面（藍22、幹線這類排後面）。
+  --   寫成 `REGEXP '^[0-9]' = 0` 而不是判斷 REGEXP_SUBSTR 是不是 NULL，
+  --   因為那兩件事在 MySQL 和 MariaDB 上答案不一樣：沒配到時
+  --   MySQL 8 回傳 NULL、MariaDB 回傳空字串，而 CAST('' AS UNSIGNED) 是 0，
+  --   於是同一句 SQL 在兩個引擎上排出完全不同的結果。
+  --   `REGEXP` 回傳 1/0 兩邊一致。
+  route_name REGEXP '^[0-9]' = 0,
+  -- 第二鍵：開頭那串數字的數值
+  CAST(REGEXP_SUBSTR(route_name, '^[0-9]+') AS UNSIGNED),
+  route_name, sub_route_uid, direction
 """
 
 
@@ -145,7 +158,10 @@ def _all_routes():
         rows = cur.fetchall()
     for r in rows:
         r["direction"] = int(r["direction"])
-        r["label"] = f"{r['sub_route_uid']}　{r['first_stop']} → {r['last_stop']}"
+        # 使用者認得的是「287」，不是「TPE11881」。
+        # uid 留在標籤尾巴：使用者會忽略它，但出問題時要查得回來。
+        r["label"] = (f"{r['route_name']}　{r['first_stop']} → {r['last_stop']}"
+                      f"　·　{r['sub_route_uid']}")
     _routes_cache.update(at=time.time(), data=rows)
     return rows
 
@@ -163,11 +179,38 @@ def routes(city: Optional[str] = None, q: Optional[str] = None,
     rows = _all_routes()
     if city:
         rows = [r for r in rows if r["city"] == city]
+
     if q:
         k = q.strip().upper()
+
+        def rank(r):
+            """
+            打「287」時，287 要排在 287區間車 和 「2870」之前。
+
+            純粹用子字串比對的話，287 會跟 2871、1287 混在一起隨機出現，
+            使用者得在一堆長得很像的選項裡找他要的那一個——
+            而他很可能就直接選了第一個。
+            排序讓「完全相同」永遠在最前面。
+            """
+            name = (r["route_name"] or "").upper()
+            if name == k:
+                return 0                      # 完全相同
+            if name.startswith(k):
+                return 1                      # 287區間車、287副
+            if k in name:
+                return 2                      # 名稱裡有
+            if k in r["sub_route_uid"].upper():
+                return 3                      # 用代碼找的
+            return 4                          # 只有站名對上
+
         rows = [r for r in rows
-                if k in r["sub_route_uid"].upper()
-                or k in (r["first_stop"] or "") or k in (r["last_stop"] or "")]
+                if k in (r["route_name"] or "").upper()
+                or k in r["sub_route_uid"].upper()
+                or k in (r["first_stop"] or "")
+                or k in (r["last_stop"] or "")]
+        # stable sort：同一個 rank 之內保持原本的路線號碼順序
+        rows = sorted(rows, key=rank)
+
     return {"total": len(rows), "routes": rows[:limit]}
 
 

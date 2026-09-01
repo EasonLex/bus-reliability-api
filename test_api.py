@@ -22,11 +22,52 @@ def test_meta_and_routes():
     assert [x["value"] for x in m["bands"]] == ["am_peak"]
 
     r = c.get("/api/routes").json()
-    assert r["total"] == 2
+    assert r["total"] == 4
     tpe = [x for x in r["routes"] if x["sub_route_uid"] == "TPE11881"][0]
+    assert tpe["route_name"] == "287"
     assert tpe["n_stops"] == 17          # 18 個站序編號，缺 14
     assert tpe["first_stop"] == "陽明山"
     assert tpe["last_stop"] == "劍潭站"  # 第 17 站（seq 18）
+    # 使用者認得的是號碼，標籤要以它開頭
+    assert tpe["label"].startswith("287　")
+
+
+def test_search_by_route_number_ranks_exact_first():
+    """
+    ★ 打「287」時，287 必須排在 287區間車 和 2871 前面。
+
+    純子字串比對會讓這三條隨機排列，使用者得在一堆長得很像的選項裡
+    挑出他要的那個——而他多半直接選第一個，然後看到別條路線的時間。
+    """
+    d = c.get("/api/routes", params={"q": "287"}).json()
+    names = [r["route_name"] for r in d["routes"]]
+    assert names[0] == "287", f"287 沒有排第一，實際順序：{names}"
+    assert set(names) == {"287", "287區間車", "2871"}
+
+    # 中文路線名也要找得到
+    assert [r["route_name"] for r in
+            c.get("/api/routes", params={"q": "藍22"}).json()["routes"]] == ["藍22"]
+
+    # 舊的查法不能壞掉：代碼與站名
+    assert c.get("/api/routes", params={"q": "TPE11881"}).json()["total"] == 1
+    assert c.get("/api/routes", params={"q": "陽明山"}).json()["total"] >= 1
+
+
+def test_route_list_is_ordered_like_a_human_expects():
+    """
+    ★ 路線清單要按號碼的「數值」排，不是字典序。
+
+    字典序會排成 1, 12, 2, 287, 3——使用者捲到一半就放棄了。
+    數字開頭的排前面，藍22、幹線這類排後面。
+
+    這支測試順便守住一個引擎差異：REGEXP_SUBSTR 沒配到時
+    MySQL 8 回傳 NULL、MariaDB 回傳空字串。用「NULL 判斷」寫排序的話，
+    在本機（MariaDB）跟正式環境（MySQL 8.4）會排出不同結果，
+    而本機測試永遠是綠的。CI 跑的是真的 mysql:8.4，所以這支測試
+    是在正式環境的引擎上驗的。
+    """
+    names = [r["route_name"] for r in c.get("/api/routes").json()["routes"]]
+    assert names == ["287", "287區間車", "2871", "藍22"], names
 
 
 def test_gap_in_seq_is_not_skipped():

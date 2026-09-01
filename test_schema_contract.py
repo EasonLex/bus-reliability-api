@@ -23,7 +23,8 @@ import db
 # API 會 SELECT 的欄位。少一個就是 Unknown column。
 REQUIRED = {
     "route_stop": {
-        "city", "sub_route_uid", "direction", "seq", "station_id", "stop_name",
+        "city", "route_name", "sub_route_uid", "direction", "seq",
+        "station_id", "stop_name",
     },
     "baseline_segment": {
         "city", "from_station_id", "to_station_id", "day_type", "band",

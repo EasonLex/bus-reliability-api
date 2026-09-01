@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS baseline_segment (
 
 CREATE TABLE IF NOT EXISTS route_stop (
   city           VARCHAR(16)  NOT NULL,
+  route_name     VARCHAR(64)  NOT NULL,
   sub_route_uid  VARCHAR(32)  NOT NULL,
   direction      TINYINT UNSIGNED NOT NULL,
   seq            SMALLINT UNSIGNED NOT NULL,
@@ -62,5 +63,6 @@ CREATE TABLE IF NOT EXISTS route_stop (
 
   PRIMARY KEY (sub_route_uid, direction, seq),
   KEY idx_station (station_id),
-  KEY idx_city_route (city, sub_route_uid)
+  KEY idx_city_route (city, sub_route_uid),
+  KEY idx_route_name (route_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC;

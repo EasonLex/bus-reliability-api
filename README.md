@@ -1,7 +1,7 @@
 # 公車服務可靠度查詢 API
 
-> 「TPE11881 這條線，第 4 站到第 12 站，平日早上尖峰要多久？」
-> 選路線 → 選起站 → 選迄站 → 出表格。
+> 「287 這班車，從永明派出所到士東市場，平日早上尖峰要多久？」
+> 打路線號碼 → 選起站 → 選迄站 → 出表格。
 
 台北市與新北市的公車每十秒回報一次位置。上游的資料管線把那些位置點推導成
 到站事件，再算出 27 天的歷史基準，最後落在 MySQL。
@@ -31,7 +31,7 @@ export MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 \
 
 python apply_sql.py sql/test_fixture_schema.sql   # 建表
 python seed_test.py                               # 假資料
-python -m pytest -q                               # 13 passed
+python -m pytest -q                               # 15 passed
 
 uvicorn main:app --reload --port 8000
 open http://127.0.0.1:8000/
@@ -91,7 +91,7 @@ curl -s 'localhost:8000/api/travel-time?sub_route_uid=TPE11881&direction=0&from_
 | 方法 | 路徑 | 說明 |
 |---|---|---|
 | GET | `/api/meta` | 城市／日型／時段的可選值，加上基準的資料範圍與版本 |
-| GET | `/api/routes?city=&q=` | 路線方向清單（含起訖站名、站數） |
+| GET | `/api/routes?city=&q=` | 路線方向清單。`q` 比對路線號碼、代碼、站名，完全相同的號碼排最前面 |
 | GET | `/api/routes/{uid}/{dir}/stops` | 站序 |
 | GET | `/api/travel-time?...` | 主查詢 |
 | GET | `/healthz` | 健康檢查 |
@@ -157,6 +157,18 @@ LEAD(station_id) OVER (ORDER BY seq) AS to_station_id
 
 → `test_composition_beats_naive_sum`
 
+### 附帶一個引擎差異
+
+路線清單按號碼的**數值**排序（不然會排成 1, 12, 2, 287, 3）。
+第一個排序鍵寫成 `route_name REGEXP '^[0-9]' = 0`，而不是判斷
+`REGEXP_SUBSTR` 的結果是不是 `NULL`——因為沒配到時 MySQL 8 回傳 `NULL`、
+MariaDB 回傳空字串，而 `CAST('' AS UNSIGNED)` 是 0。
+同一句 SQL 在兩個引擎上會排出完全不同的結果。
+
+本機用 MariaDB 開發、正式環境是 MySQL 8.4，這種差異在本機永遠測不出來。
+CI 跑的是真的 `mysql:8.4`，所以 `test_route_list_is_ordered_like_a_human_expects`
+是在正式環境的引擎上驗的。
+
 ---
 
 ## 契約測試
@@ -210,10 +222,9 @@ MYSQL_HOST=... MYSQL_USER=bus_api ... python -m pytest test_schema_contract.py -
 
 ## 已知的限制
 
-- **沒有路線名稱。** `route_stop` 只匯了 `sub_route_uid`，
-  搜尋只能用代碼或站名，打「紅5」查不到。
-  要修的話在主專案 `export_serving.py` 的 `fetch_routes()` 多帶一個
-  `route_name`（MongoDB 的文件裡有），schema 加一欄，這裡的搜尋跟著加。
+- **一個號碼會對到好幾條子路線。** 287 底下有主線、區間車、副線，
+  各自又有去返程。清單會全部列出來讓使用者自己挑，靠起訖站名分辨——
+  不猜一條給他，猜錯的話他看到的是別條路線的時間，而且不會知道。
 - **時段的中文標籤在 `main.py` 的 `BAND_LABEL`，時段的實際定義在主專案的
   `baseline_build.sql`。** 這是兩份真相，改一邊沒改另一邊不會報錯。
   下拉選單的**選項**本身是從資料庫問來的，所以至少不會出現資料庫裡沒有的時段。
