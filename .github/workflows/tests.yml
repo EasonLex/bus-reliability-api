@@ -1,0 +1,58 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # 用真的 MySQL 8.4，跟正式環境同一個大版本。
+    # 換成 SQLite 之類的替身會讓測試變快，但這支服務的三個關鍵行為
+    # （LEAD 視窗函數、LEFT JOIN、information_schema 契約）
+    # 全都是資料庫行為——用替身測等於沒測到重點。
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-not-a-secret
+          MYSQL_DATABASE: bus
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-only-not-a-secret"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ci-only-not-a-secret
+      MYSQL_DATABASE: bus
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: 建表
+        # 用 MYSQL_PWD 而不是 -p。-p 會在 process list 裡露出密碼，
+        # 而且 mysql -p < file 的密碼提示會把檔案第一行吃掉。
+        run: |
+          MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -P 3306 \
+            -u root --default-character-set=utf8mb4 bus \
+            < sql/test_fixture_schema.sql
+
+      - name: 灌假資料
+        run: python seed_test.py
+
+      - name: 測試
+        run: python -m pytest -q

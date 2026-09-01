@@ -1,0 +1,6 @@
+# 版本鎖死。不鎖的話今天建起來能跑、下個月重建同一份 Dockerfile 卻壞掉，
+# 而那時已經想不起來中間動過什麼。
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pymysql==1.1.1
+cryptography==44.0.0        # MySQL 8.4 用 caching_sha2_password，少了這個連不上

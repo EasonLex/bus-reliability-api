@@ -1,0 +1,23 @@
+# 憑證。這一行是這個檔案裡最重要的一行。
+#
+# 加完之後驗證一次，不要相信「我加了所以有效」：
+#     git check-ignore -v .env.api      ← 要有輸出
+#
+# 已經被 track 的檔案不會因為加進 .gitignore 就被忽略，
+# 那種情況要 git rm --cached。
+.env
+.env.*
+
+# 範本檔刻意不用前導點命名。
+# 叫 .env.api.example 的話會被上面的 .env.* 吃掉，
+# 就得再寫一行 ! 例外——少一個例外就少一個哪天會寫錯的地方。
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+.venv/
+venv/
+
+.DS_Store
