@@ -20,7 +20,9 @@
 需要一個 MySQL 8.x（或 MariaDB 10.11+，要有視窗函數）。
 
 ```bash
-git clone <this-repo> bus-api && cd bus-api
+REPO=git@github.com:你的帳號/bus-reliability-api.git   # ← 不要加角括號，< > 在 shell 裡是重新導向
+git clone "$REPO" bus-api && cd bus-api
+
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 
@@ -53,26 +55,24 @@ open http://127.0.0.1:8000/
 
 ```bash
 cd ~/TKR102
-git clone <this-repo> api
+REPO=git@github.com:你的帳號/bus-reliability-api.git   # ← 不要加角括號
+git clone "$REPO" api
 echo '/api/' >> .gitignore              # 主專案不要去追這個巢狀 repo
 
-# 1. 唯讀帳號
-docker exec -i mysql sh -c \
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root --default-character-set=utf8mb4 bus' \
-  < api/sql/grant_readonly.sql
+# 1. 唯讀帳號 + 憑證，一步完成
+#    密碼由腳本產生並直接寫進 .env.api，不經過你的鍵盤，
+#    所以資料庫上那組跟檔案裡那組必然一致。
+./api/sql/create_readonly_user.sh
+git -C api check-ignore -v .env.api     # 要有輸出
 
-# 2. 憑證
-cd api && cp env.api.example .env.api && vi .env.api
-git check-ignore -v .env.api            # 要有輸出
+# 2. compose 加上 api service（貼 api/api-service.yml 的內容進 services:）
+vi deploy/docker-compose.yml
 
-# 3. compose 加上 api service（貼 api/api-service.yml 的內容進 services:）
-cd .. && vi deploy/docker-compose.yml
-
-# 4. 起
+# 3. 起
 docker compose -f deploy/docker-compose.yml up -d --build api
 docker compose -f deploy/docker-compose.yml logs -f api
 
-# 5. 確認
+# 4. 確認
 curl -s localhost:8000/healthz
 curl -s 'localhost:8000/api/travel-time?sub_route_uid=TPE11881&direction=0&from_seq=4&to_seq=12' \
   | python3 -m json.tool | head -30
@@ -196,7 +196,7 @@ MYSQL_HOST=... MYSQL_USER=bus_api ... python -m pytest test_schema_contract.py -
 
 - 服務只綁 `127.0.0.1` 與 Tailscale IP，**不綁 `0.0.0.0`**。
   等於「進得了 Tailnet 才看得到」。
-- 資料庫用獨立的唯讀帳號 `bus_api`（`sql/grant_readonly.sql`），
+- 資料庫用獨立的唯讀帳號 `bus_api`（`sql/create_readonly_user.sh`），
   只有兩張表的 `SELECT`，而且限制從 docker 網段連。
   匯出腳本那個帳號要 `CREATE`/`DROP`/`RENAME`（原子交換用），權限太大，
   不該給唯一會被瀏覽器碰到的服務用。
