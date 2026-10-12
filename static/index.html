@@ -67,7 +67,7 @@
 <div class="wrap">
   <h1>這段路平常要開多久？</h1>
   <p class="sub">
-    根據 27 天的公車即時位置資料算出來的歷史基準。選一條路線、選起站和迄站，
+    根據<span id="ndays">累積</span>的公車即時位置資料算出來的歷史基準。選一條路線、選起站和迄站，
     看每一段的「一半的車多快」與「最慢的一成多慢」。
   </p>
 
@@ -139,6 +139,8 @@ const fill = (sel, items, val, lab) => {
     fill($("daytype"), m.day_types, d=>d.value, d=>d.label);
     fill($("band"), m.bands, b=>b.value, b=>b.label);
     const b = m.baseline;
+    // 天數從基準表問來，不寫死——寫死的「27 天」在資料累積後就會過期
+    $("ndays").textContent = ` ${b.n_days} 天`;
     $("foot").textContent =
       `基準資料範圍 ${b.date_from} ～ ${b.date_to}（共 ${b.n_days} 天）　·　`
       + `判定規則 ${b.rule_version}　·　基準版本 ${b.baseline_version}　·　`

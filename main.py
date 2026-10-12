@@ -36,13 +36,26 @@ import db
 #   下拉選單的選項不是寫死在這裡，是啟動時從資料庫問出來的（見 /api/meta）——
 #   資料庫裡沒有的時段，畫面上就不該出現。
 # ---------------------------------------------------------------------
-BAND_LABEL = {
+BAND_NAME = {
     "am_peak": "早尖峰",
-    "midday":  "離峰（白天）",
+    "midday":  "離峰",              # 時間區間已經說明是白天，不用再加（白天）
     "pm_peak": "晚尖峰",
     "evening": "晚間",
     "night":   "深夜",
 }
+# 時間區間，照抄 baseline_build.sql 的 CASE WHEN（台北時間，以起站的到站時刻判定）：
+#   hr BETWEEN  6 AND  9 → am_peak      hr BETWEEN 16 AND 19 → pm_peak
+#   hr BETWEEN 10 AND 15 → midday       hr BETWEEN 20 AND 22 → evening
+#   其餘（23–5 點）      → night
+# 寫成「起–迄」的半開區間：06:00–10:00 代表 6:00 到 9:59。
+BAND_HOURS = {
+    "am_peak": "06:00–10:00",
+    "midday":  "10:00–16:00",
+    "pm_peak": "16:00–20:00",
+    "evening": "20:00–23:00",
+    "night":   "23:00–06:00",
+}
+BAND_LABEL = {b: f"{BAND_NAME[b]}（{BAND_HOURS[b]}）" for b in BAND_NAME}
 BAND_ORDER = ["am_peak", "midday", "pm_peak", "evening", "night"]
 
 DAYTYPE_LABEL = {"weekday": "平日", "weekend": "假日"}

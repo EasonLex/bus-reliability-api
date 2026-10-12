@@ -20,6 +20,8 @@ def test_meta_and_routes():
     m = c.get("/api/meta").json()
     assert {x["value"] for x in m["day_types"]} == {"weekday"}
     assert [x["value"] for x in m["bands"]] == ["am_peak"]
+    # 使用者要知道「早尖峰」是幾點到幾點，不然選了也不知道選的是什麼
+    assert m["bands"][0]["label"] == "早尖峰（06:00–10:00）"
 
     r = c.get("/api/routes").json()
     assert r["total"] == 4
@@ -137,3 +139,13 @@ def test_bad_input():
     assert c.get("/api/travel-time", params=dict(
         sub_route_uid="NOPE", direction=0, from_seq=1, to_seq=2)).status_code == 404
     assert c.get("/api/routes/NOPE/0/stops").status_code == 404
+
+
+def test_every_band_has_name_and_hours():
+    """
+    BAND_NAME、BAND_HOURS、BAND_ORDER 是三份清單，少一個鍵不會報錯，
+    只會讓畫面上某個時段變回英文代碼、或沒有時間區間。
+    """
+    assert set(main.BAND_NAME) == set(main.BAND_HOURS) == set(main.BAND_ORDER)
+    for b in main.BAND_ORDER:
+        assert main.BAND_HOURS[b] in main.BAND_LABEL[b]
