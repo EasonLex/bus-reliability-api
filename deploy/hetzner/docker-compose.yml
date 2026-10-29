@@ -1,0 +1,101 @@
+# =====================================================================
+# 公車服務可靠度 —— Hetzner 上的服務層（MySQL + API）
+#
+#   cd /srv/apps/bus
+#   docker compose -f deploy/hetzner/docker-compose.yml up -d
+#
+# 跟 GCE 版的差別
+# ------------------------------------------------------------
+#   GCE 上這兩個服務掛在 Kafka 的網路裡，因為同一台還有 collector、Kafka。
+#   這裡只有服務層，所以用 compose 自己的預設網路就好，不再依賴外部網路。
+#
+#   這台機器會放好幾個專案，所以：
+#     - name: bus           專案名寫死，不隨資料夾名改變
+#     - container_name 加 bus- 前綴，別的專案也有 mysql 的時候不會撞名
+#     - port 只綁 127.0.0.1，對外由 Tailscale Funnel 從本機轉出去
+#   慣例的完整說明在 hetzner-infra 的 README。
+#
+# 憑證檔都在 repo 根目錄，被 .gitignore 的 .env.* 蓋掉：
+#   .env.mysql   deploy/hetzner/init_env_mysql.sh 產生
+#   .env.api     sql/create_readonly_user.sh 產生
+# =====================================================================
+
+name: bus
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: bus-mysql
+    restart: unless-stopped
+
+    # compose 檔的相對路徑是相對於「這個檔所在的目錄」，
+    # 所以 repo 根目錄是 ../..，不是 ./
+    env_file:
+      - ../../.env.mysql
+
+    command:
+      # 資料只有約 20 MB，256M 的 buffer pool 已經是整個資料集常駐記憶體
+      - --innodb-buffer-pool-size=256M
+      # 預設開著會吃掉 300–400 MB，比這個資料庫的資料大二十倍
+      - --performance-schema=OFF
+      - --skip-log-bin
+      - --innodb-redo-log-capacity=64M
+      - --max-connections=32
+      # 時區寫死 UTC，不靠環境決定
+      - --default-time-zone=+00:00
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+    # 不開任何 port。
+    # API 走 compose 網路用服務名 mysql 連；人要查資料就
+    #   docker exec -it bus-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot bus'
+    # 沒有綁 port 的東西，就不用擔心它綁錯介面。
+
+    # 同一台機器上還有別的專案，上限要設。
+    mem_limit: 768m
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1",
+             "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  api:
+    build:
+      context: ../..
+    image: bus-api:latest
+    container_name: bus-api
+    restart: unless-stopped
+
+    env_file:
+      - ../../.env.api
+
+    # 只等容器「啟動了」不夠，要等 MySQL 真的可以連
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    # 只綁本機。Funnel 從 127.0.0.1:8000 轉出去，
+    # 不需要綁 Tailscale IP，更不要 0.0.0.0（Docker 開的 port 會繞過 ufw）。
+    # 8000 是這個專案在 port 表上登記的號碼。
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    mem_limit: 256m
+
+    healthcheck:
+      # 映像檔裡沒有 curl，用 python
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  mysql-data:

@@ -39,7 +39,14 @@ open http://127.0.0.1:8000/
 
 ---
 
-## 部署（GCE，跟 MySQL 同一台）
+## 部署
+
+**目前跑在 Hetzner**，步驟見 [`deploy/hetzner/README.md`](deploy/hetzner/README.md)。
+GCP 試用期在 2026/10 結束後，上游管線停止，服務層搬過去，資料凍結在最後一次匯出。
+
+下面是 2026/8–10 在 GCE 上的舊做法，留作紀錄。
+
+### 舊：GCE（跟 MySQL、Kafka 同一台）
 
 這個 repo clone 進主專案底下，compose 的相對路徑就不用改：
 
